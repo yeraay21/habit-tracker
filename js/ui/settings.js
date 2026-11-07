@@ -100,7 +100,17 @@ function credentialsCard(s) {
     h('button', {
       class: 'btn btn-primary btn-sm', type: 'button',
       onclick: () => {
-        store.updateSettings({ clientId: clientId.trim(), clientSecret: secret.trim(), authMode: mode });
+        const id = clientId.replace(/\s+/g, '');
+        const sec = secret.replace(/\s+/g, '');
+        if (/^GOCSPX-/.test(id)) { toast('Has pegado el secret en el campo Client ID: van al revés', 4500); return; }
+        if (!/^\d+-[a-z0-9]+\.apps\.googleusercontent\.com$/.test(id)) {
+          toast('El Client ID no parece válido: debe ser "números-letras.apps.googleusercontent.com"', 5000);
+          return;
+        }
+        if (sec && !/^GOCSPX-/.test(sec)) toast('Ojo: el secret suele empezar por "GOCSPX-"', 4000);
+        clientId = id;
+        secret = sec;
+        store.updateSettings({ clientId: id, clientSecret: sec, authMode: mode });
         toast('Credenciales guardadas');
         rerender();
       },

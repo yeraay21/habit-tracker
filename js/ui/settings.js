@@ -21,6 +21,7 @@ export function renderSettings(root) {
     calendarsCard(s),
     reviewCard(s),
     backupCard(),
+    diagnosticsCard(),
     store.DEMO ? demoCard() : null,
     h('p', { class: 'hint', style: { textAlign: 'center', marginTop: '18px' } },
       store.DEMO ? h('a', { href: auth.appUrl() }, 'Salir del modo demo') : h('a', { href: `${auth.appUrl()}?demo=1` }, 'Probar el modo demo (datos de mentira)')),
@@ -62,20 +63,27 @@ function accountCard(st) {
       }, 'Iniciar sesión con Google'),
     );
   } else {
-    card.append(
-      h('div', { class: 'status-line' }, `Conectado · ${sync0.pending} cambio${sync0.pending === 1 ? '' : 's'} pendiente${sync0.pending === 1 ? '' : 's'}`),
-      sync0.msg ? h('p', { class: 'muted' }, sync0.msg) : null,
+    const STATES = { ok: 'Sincronizado', syncing: 'Sincronizando…', offline: 'Sin conexión', error: 'Error al sincronizar', auth: 'Problema con la sesión', idle: 'Sin sincronizar todavía' };
+    card.append(...[
+      h('div', { class: 'status-line' }, `Conectado · ${STATES[sync0.state] || sync0.state} · ${sync0.pending} pendiente${sync0.pending === 1 ? '' : 's'}`),
+      sync0.lastSync ? h('p', { class: 'muted' }, `Última sincronización: ${new Date(sync0.lastSync).toLocaleString('es-ES')}`) : null,
+      sync0.msg ? h('p', { style: { color: 'var(--warn)' } }, sync0.msg) : null,
       h('div', { class: 'btn-row' },
         h('button', { class: 'btn btn-sm', type: 'button', onclick: () => { sync.clearMessage(); sync.sync(); } }, 'Sincronizar ahora'),
         h('button', {
           class: 'btn btn-sm btn-danger', type: 'button',
           onclick: async () => {
-            if (!confirm('¿Cerrar sesión? Los cambios pendientes se enviarán cuando vuelvas a entrar.')) return;
+            if (!confirm('¿Cerrar sesión? Se borra la copia local de esta cuenta (lo que está en Google no se toca).')) return;
             await auth.signOut();
+            // Olvidar los datos de esta cuenta para poder entrar con otra sin mezclarlos.
+            store.updateSettings({ trackerCalId: null, reviewEventId: null, visibleCals: {} });
+            store.del('localDone');
+            store.del('lastError');
+            sync.resetCache();
             rerender();
           },
         }, 'Cerrar sesión')),
-    );
+    ].filter(Boolean));
   }
   return card;
 }
@@ -195,6 +203,29 @@ function backupCard() {
       h('button', { class: 'btn btn-sm', type: 'button', onclick: () => fileInput.click() }, 'Importar JSON'),
       fileInput),
   );
+}
+
+/** Datos para depurar sin consola de desarrollador (sin tokens ni secretos). */
+function diagnosticsCard() {
+  const d = sync.diagnostics();
+  const text = [
+    `Estado: ${d.state}${d.msg ? ` · ${d.msg}` : ''}`,
+    `Última sync: ${d.lastSync ? new Date(d.lastSync).toLocaleString('es-ES') : 'nunca'}`,
+    `Sesión: ${auth.status()} · calendario Tracker: ${d.tracker ? 'sí' : 'no'}`,
+    `Calendarios: ${d.cals.length ? d.cals.join(', ') : 'ninguno'}`,
+    `Eventos en caché: ${d.events} · hábitos: ${d.masters} · cola: ${d.pending}`,
+    `Último error: ${d.lastError || 'ninguno'}`,
+    `Online: ${navigator.onLine} · ${location.origin}`,
+  ].join('\n');
+  return h('details', { class: 'card' },
+    h('summary', { style: { cursor: 'pointer', fontWeight: 700 } }, 'Diagnóstico'),
+    h('pre', { class: 'mono', style: { whiteSpace: 'pre-wrap', margin: '12px 0' } }, text),
+    h('button', {
+      class: 'btn btn-sm', type: 'button',
+      onclick: async () => {
+        try { await navigator.clipboard.writeText(text); toast('Diagnóstico copiado'); } catch { toast('No se pudo copiar; haz una captura'); }
+      },
+    }, 'Copiar'));
 }
 
 function demoCard() {

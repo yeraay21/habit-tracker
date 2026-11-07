@@ -220,6 +220,7 @@ async function flushOutbox() {
       op.inflight = false;
       if (isPermanent(e)) {
         console.warn('Cambio descartado', op, e);
+        store.set('lastError', `${new Date().toLocaleString('es-ES')} · cambio descartado: Google ${e.status} ${e.message}`);
         outbox.shift();
         status.msg = `Un cambio no se pudo guardar: ${e.message}`;
         continue;
@@ -440,9 +441,29 @@ async function run(doPull) {
 
 function handleError(e) {
   console.warn('Sync:', e);
+  const detail = e instanceof gcal.ApiError ? `Google ${e.status}${e.reason ? ` (${e.reason})` : ''}: ${e.message}` : `${e.name}: ${e.message}`;
+  store.set('lastError', `${new Date().toLocaleString('es-ES')} · ${detail}`);
   if (e instanceof auth.AuthError) setStatus('auth', e.message);
-  else if (e instanceof TypeError) setStatus('offline');
-  else setStatus('error', e.message);
+  // Un TypeError con red suele ser un fallo real (CORS, bloqueo o error de código), no falta de conexión.
+  else if (e instanceof TypeError && !navigator.onLine) setStatus('offline');
+  else setStatus('error', detail);
+}
+
+/** Resumen para la tarjeta de Diagnóstico (sin tokens ni secretos). */
+export function diagnostics() {
+  const counts = {};
+  for (const ev of Object.values(server.events)) counts[ev._cal] = (counts[ev._cal] || 0) + 1;
+  return {
+    state: status.state,
+    msg: status.msg,
+    lastSync: server.lastSync,
+    tracker: !!store.getSettings().trackerCalId,
+    cals: server.cals.map((c) => `${c.tracker ? 'Tracker' : c.summary} (${counts[c.tracker ? TRK : c.id] || 0})`),
+    events: Object.keys(server.events).length,
+    masters: Object.keys(server.masters).length,
+    pending: outbox.length,
+    lastError: store.get('lastError', ''),
+  };
 }
 
 export function clearMessage() {
@@ -462,9 +483,11 @@ export function start() {
   setInterval(() => { if (document.visibilityState === 'visible') sync(); }, CONFIG.AUTO_SYNC_MINUTES * 60_000);
 }
 
-/** Olvida la caché (al cerrar sesión). La cola pendiente se conserva. */
+/** Olvida la caché y la cola (al cerrar sesión, para no mezclar cuentas). */
 export function resetCache() {
   server = { cals: [], events: {}, masters: {}, ranges: [], lastSync: 0 };
+  outbox = [];
+  status = { state: 'idle', msg: '' };
   persist();
   emit();
 }

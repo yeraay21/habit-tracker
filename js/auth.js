@@ -162,7 +162,7 @@ export function signIn() {
       client_id: clientId,
       scope: SCOPES.join(' '),
       ux_mode: 'popup',
-      select_account: false,
+      select_account: true, // con varias cuentas en el móvil, que siempre pregunte cuál usar
       callback: async (resp) => {
         if (resp.error) return reject(new AuthError('popup', resp.error_description || resp.error));
         try {
@@ -190,7 +190,7 @@ function signInRedirect() {
     response_type: 'code',
     scope: SCOPES.join(' '),
     access_type: 'offline',
-    prompt: 'consent',
+    prompt: 'select_account consent',
     include_granted_scopes: 'true',
     state,
   });
